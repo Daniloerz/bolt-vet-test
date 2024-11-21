@@ -1,0 +1,59 @@
+pipeline {
+    agent {label "host"}
+    environment {
+        REPO_URL = 'https://github.com/Daniloerz/bolt-vet-test.git' // Reemplaza con la URL de tu repositorio.
+        DOCKER_IMAGE = 'veterinary-store:latest'
+        HOST_DOCKER_SOCKET = '/var/run/docker.sock'
+        HOST_DEPLOY_PATH = '/opt/veterinary-store' // Ruta en el host donde se almacenará el proyecto.
+    }
+    stages {
+        stage('Preparar Entorno') {
+            steps {
+                script {
+                    // Verificar acceso al Docker Host desde el contenedor de Jenkins
+                    if (!fileExists("${HOST_DOCKER_SOCKET}")) {
+                        error("El Docker socket ${HOST_DOCKER_SOCKET} no está accesible desde Jenkins. Configura el volumen adecuadamente.")
+                    }
+                }
+            }
+        }
+        stage('Clonar Repositorio') {
+            steps {
+                git branch: 'main', url: "${REPO_URL}" // Reemplaza "main" con tu rama principal si es diferente.
+            }
+        }
+        stage('Construir Aplicación') {
+            steps {
+                sh '''
+                    npm install
+                    npm run build
+                '''
+            }
+        }
+        stage('Construir Imagen Docker') {
+            steps {
+                sh '''
+                    docker build -t ${DOCKER_IMAGE} .
+                '''
+            }
+        }
+        stage('Desplegar Contenedor en el Host') {
+            steps {
+                // Elimina contenedores antiguos y lanza uno nuevo
+                sh '''
+                    docker ps -q --filter "name=veterinary-store" | xargs -r docker stop
+                    docker ps -aq --filter "name=veterinary-store" | xargs -r docker rm
+                    docker run -d --name veterinary-store -p 5175:80 ${DOCKER_IMAGE}
+                '''
+            }
+        }
+    }
+    post {
+        success {
+            echo 'Despliegue completado exitosamente.'
+        }
+        failure {
+            echo 'El despliegue falló. Revisa los logs para más detalles.'
+        }
+    }
+}
